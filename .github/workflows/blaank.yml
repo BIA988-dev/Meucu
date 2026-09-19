@@ -1,0 +1,68 @@
+      - name: Instalar ambiente gráfico e RDP
+        run: |
+          sudo apt-get update
+
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            xfce4 \
+            xfce4-goodies \
+            xrdp \
+            dbus-x11 \
+            curl
+
+      - name: Configurar senha do usuário
+        run: |
+          echo "runner:${{ secrets.VNC_PASSWORD }}" | sudo chpasswd
+
+      - name: Configurar o XFCE no RDP
+        run: |
+          echo "startxfce4" > "$HOME/.xsession"
+
+          sudo adduser xrdp ssl-cert
+
+          sudo sed -i 's/^test -x \/etc\/X11\/Xsession/#&/' \
+            /etc/xrdp/startwm.sh
+
+          sudo sed -i 's/^exec \/etc\/X11\/Xsession/#&/' \
+            /etc/xrdp/startwm.sh
+
+          printf '%s\n' \
+            '#!/bin/sh' \
+            'unset DBUS_SESSION_BUS_ADDRESS' \
+            'unset XDG_RUNTIME_DIR' \
+            'exec startxfce4' \
+            | sudo tee /etc/xrdp/startwm.sh > /dev/null
+
+          sudo chmod +x /etc/xrdp/startwm.sh
+
+      - name: Instalar Tailscale
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sh
+
+      - name: Iniciar o Tailscale
+        run: |
+          sudo tailscale up \
+            --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" \
+            --hostname="github-pc-virtual"
+
+      - name: Iniciar o servidor RDP
+        run: |
+          sudo systemctl enable xrdp
+          sudo systemctl restart xrdp
+
+      - name: Mostrar informações de conexão
+        run: |
+          echo "======================================"
+          echo "PC VIRTUAL RDP INICIADO"
+          echo "======================================"
+          echo "IP Tailscale:"
+          tailscale ip -4
+          echo ""
+          echo "Porta RDP: 3389"
+          echo "Usuário: runner"
+          echo "Senha: a senha do Secret VNC_PASSWORD"
+          echo "======================================"
+
+      - name: Manter a máquina ligada
+        run: |
+          sleep 20400
+          
