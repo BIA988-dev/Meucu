@@ -1,0 +1,83 @@
+name: PC Virtual Ubuntu
+
+on:
+  workflow_dispatch:
+
+jobs:
+  pc-virtual:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+
+    steps:
+      - name: Atualizar sistema
+        run: |
+          sudo apt-get update
+
+      - name: Instalar ambiente gráfico e servidor VNC
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            xfce4 \
+            xfce4-goodies \
+            tigervnc-standalone-server \
+            tigervnc-tools \
+            dbus-x11 \
+            xterm \
+            curl
+
+      - name: Instalar Tailscale
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sh
+
+      - name: Configurar senha do usuário
+        run: |
+          echo "runner:${{ secrets.VNC_PASSWORD }}" | sudo chpasswd
+
+      - name: Configurar o servidor VNC
+        run: |
+          mkdir -p "$HOME/.vnc"
+
+          cat > "$HOME/.vnc/xstartup" <<'EOF'
+          #!/bin/sh
+          unset SESSION_MANAGER
+          unset DBUS_SESSION_BUS_ADDRESS
+
+          startxfce4 &
+          EOF
+
+          chmod +x "$HOME/.vnc/xstartup"
+
+          printf '%s\n' "${{ secrets.VNC_PASSWORD }}" | \
+            vncpasswd -f > "$HOME/.vnc/passwd"
+
+          chmod 600 "$HOME/.vnc/passwd"
+
+      - name: Iniciar o Tailscale
+        run: |
+          sudo tailscale up \
+            --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" \
+            --hostname="github-pc-virtual"
+
+      - name: Iniciar o servidor VNC
+        run: |
+          vncserver :1 \
+            -geometry 1280x720 \
+            -depth 24 \
+            -localhost no
+
+      - name: Mostrar informações de conexão
+        run: |
+          echo "======================================"
+          echo "PC VIRTUAL INICIADO"
+          echo "======================================"
+          echo "Endereço Tailscale:"
+          tailscale ip -4
+          echo ""
+          echo "Porta VNC: 5901"
+          echo "Usuário: runner"
+          echo "A máquina será encerrada ao terminar o workflow."
+          echo "======================================"
+
+      - name: Manter a máquina ligada
+        run: |
+          sleep 20400
+          
