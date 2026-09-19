@@ -1,55 +1,42 @@
-name: PC Virtual Ubuntu
-
-on:
-  workflow_dispatch:
-
-jobs:
-  pc-virtual:
-    runs-on: ubuntu-latest
-    timeout-minutes: 350
-
-    steps:
-      - name: Atualizar sistema
+      - name: Instalar ambiente gráfico e RDP
         run: |
           sudo apt-get update
 
-      - name: Instalar ambiente gráfico e servidor VNC
-        run: |
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
             xfce4 \
             xfce4-goodies \
-            tigervnc-standalone-server \
-            tigervnc-tools \
+            xrdp \
             dbus-x11 \
-            xterm \
             curl
-
-      - name: Instalar Tailscale
-        run: |
-          curl -fsSL https://tailscale.com/install.sh | sh
 
       - name: Configurar senha do usuário
         run: |
           echo "runner:${{ secrets.VNC_PASSWORD }}" | sudo chpasswd
 
-      - name: Configurar o servidor VNC
+      - name: Configurar o XFCE no RDP
         run: |
-          mkdir -p "$HOME/.vnc"
+          echo "startxfce4" > "$HOME/.xsession"
 
-          cat > "$HOME/.vnc/xstartup" <<'EOF'
-          #!/bin/sh
-          unset SESSION_MANAGER
-          unset DBUS_SESSION_BUS_ADDRESS
+          sudo adduser xrdp ssl-cert
 
-          startxfce4 &
-          EOF
+          sudo sed -i 's/^test -x \/etc\/X11\/Xsession/#&/' \
+            /etc/xrdp/startwm.sh
 
-          chmod +x "$HOME/.vnc/xstartup"
+          sudo sed -i 's/^exec \/etc\/X11\/Xsession/#&/' \
+            /etc/xrdp/startwm.sh
 
-          printf '%s\n' "${{ secrets.VNC_PASSWORD }}" | \
-            vncpasswd -f > "$HOME/.vnc/passwd"
+          printf '%s\n' \
+            '#!/bin/sh' \
+            'unset DBUS_SESSION_BUS_ADDRESS' \
+            'unset XDG_RUNTIME_DIR' \
+            'exec startxfce4' \
+            | sudo tee /etc/xrdp/startwm.sh > /dev/null
 
-          chmod 600 "$HOME/.vnc/passwd"
+          sudo chmod +x /etc/xrdp/startwm.sh
+
+      - name: Instalar Tailscale
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sh
 
       - name: Iniciar o Tailscale
         run: |
@@ -57,24 +44,22 @@ jobs:
             --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" \
             --hostname="github-pc-virtual"
 
-      - name: Iniciar o servidor VNC
+      - name: Iniciar o servidor RDP
         run: |
-          vncserver :1 \
-            -geometry 1280x720 \
-            -depth 24 \
-            -localhost no
+          sudo systemctl enable xrdp
+          sudo systemctl restart xrdp
 
       - name: Mostrar informações de conexão
         run: |
           echo "======================================"
-          echo "PC VIRTUAL INICIADO"
+          echo "PC VIRTUAL RDP INICIADO"
           echo "======================================"
-          echo "Endereço Tailscale:"
+          echo "IP Tailscale:"
           tailscale ip -4
           echo ""
-          echo "Porta VNC: 5901"
+          echo "Porta RDP: 3389"
           echo "Usuário: runner"
-          echo "A máquina será encerrada ao terminar o workflow."
+          echo "Senha: a senha do Secret VNC_PASSWORD"
           echo "======================================"
 
       - name: Manter a máquina ligada
