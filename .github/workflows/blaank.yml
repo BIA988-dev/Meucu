@@ -1,7 +1,20 @@
-      - name: Instalar ambiente gráfico e RDP
+name: PC Virtual RDP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  pc-virtual:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+
+    steps:
+      - name: Atualizar sistema
         run: |
           sudo apt-get update
 
+      - name: Instalar ambiente gráfico e RDP
+        run: |
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
             xfce4 \
             xfce4-goodies \
@@ -9,28 +22,23 @@
             dbus-x11 \
             curl
 
-      - name: Configurar senha do usuário
+      - name: Configurar senha do RDP
         run: |
           echo "runner:${{ secrets.VNC_PASSWORD }}" | sudo chpasswd
 
-      - name: Configurar o XFCE no RDP
+      - name: Configurar o XFCE
         run: |
           echo "startxfce4" > "$HOME/.xsession"
+          chmod +x "$HOME/.xsession"
 
           sudo adduser xrdp ssl-cert
 
-          sudo sed -i 's/^test -x \/etc\/X11\/Xsession/#&/' \
-            /etc/xrdp/startwm.sh
-
-          sudo sed -i 's/^exec \/etc\/X11\/Xsession/#&/' \
-            /etc/xrdp/startwm.sh
-
-          printf '%s\n' \
-            '#!/bin/sh' \
-            'unset DBUS_SESSION_BUS_ADDRESS' \
-            'unset XDG_RUNTIME_DIR' \
-            'exec startxfce4' \
-            | sudo tee /etc/xrdp/startwm.sh > /dev/null
+          sudo tee /etc/xrdp/startwm.sh > /dev/null <<'EOF'
+          #!/bin/sh
+          unset DBUS_SESSION_BUS_ADDRESS
+          unset XDG_RUNTIME_DIR
+          exec startxfce4
+          EOF
 
           sudo chmod +x /etc/xrdp/startwm.sh
 
@@ -38,18 +46,19 @@
         run: |
           curl -fsSL https://tailscale.com/install.sh | sh
 
-      - name: Iniciar o Tailscale
+      - name: Conectar ao Tailscale
         run: |
           sudo tailscale up \
             --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" \
             --hostname="github-pc-virtual"
 
-      - name: Iniciar o servidor RDP
+      - name: Iniciar servidor RDP
         run: |
           sudo systemctl enable xrdp
           sudo systemctl restart xrdp
+          sudo systemctl status xrdp --no-pager
 
-      - name: Mostrar informações de conexão
+      - name: Mostrar dados de conexão
         run: |
           echo "======================================"
           echo "PC VIRTUAL RDP INICIADO"
@@ -57,9 +66,9 @@
           echo "IP Tailscale:"
           tailscale ip -4
           echo ""
-          echo "Porta RDP: 3389"
+          echo "Porta: 3389"
           echo "Usuário: runner"
-          echo "Senha: a senha do Secret VNC_PASSWORD"
+          echo "Senha: valor do Secret VNC_PASSWORD"
           echo "======================================"
 
       - name: Manter a máquina ligada
